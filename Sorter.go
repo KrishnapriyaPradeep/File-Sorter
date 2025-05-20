@@ -1,10 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+type FileInfo struct {
+	Name string
+	Path string
+	Size int64
+	Perm os.FileMode
+	Ext  string
+}
 
 func insidedirectory(path string) []string {
 	var filesList []string
@@ -23,18 +32,43 @@ func insidedirectory(path string) []string {
 	}
 	return filesList
 }
+
 func main() {
 	path := os.Args[1]
 	fmt.Printf("Folder path = %v", path)
 	var entries []string
 	entries = append(entries, insidedirectory(path)...)
-	for index, file := range entries {
-		info, err := os.Stat(file)
-		if err != nil {
+	var fileInfos []FileInfo
+	for _, file := range entries {
+		info, error := os.Stat(file)
+		if error != nil {
 			fmt.Printf("There's an error!")
 			continue
 		}
-		perm := info.Mode().Perm()
-		fmt.Printf("%v : %s — Permissions: %s\n", index, file, perm)
+		fileInfos = append(fileInfos, FileInfo{
+			Name: info.Name(),
+			Path: file,
+			Size: info.Size(),
+			Perm: info.Mode().Perm(),
+			Ext:  filepath.Ext(file),
+		})
 	}
+
+	for i, file := range fileInfos {
+		fmt.Printf("%d: %s — Size: %d bytes — Permissions: %s\n", i+1, file.Path, file.Size, file.Perm)
+	}
+
+	jsonData, error := json.MarshalIndent(fileInfos, "", "  ")
+	if error != nil {
+		fmt.Print("There is an error!")
+	}
+
+	jsonFileName := "metadatafile.json"
+	write := os.WriteFile(jsonFileName, jsonData, 0644)
+	if write != nil {
+		fmt.Print("There is an error!")
+	}
+
+	fmt.Printf("\nMetadata saved to '%s'\n", jsonFileName)
+
 }
