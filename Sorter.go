@@ -8,7 +8,78 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run main.go <folder_path>")
+		return
+	}
+	path := os.Args[1]
+	rootDir := path
+	fmt.Printf("Folder path = %v", path)
+	var entries []string
+	entries = append(entries, insidedirectory(path)...)
+	var fileInfos []FileInfo
+	for _, file := range entries {
+		info, err := os.Stat(file)
+		if err != nil {
+			fmt.Printf("There's an error11!%v\n", err)
+			continue
+		}
+		fileInfos = append(fileInfos, FileInfo{
+			Name: info.Name(),
+			Path: file,
+			Size: info.Size(),
+			Perm: info.Mode().Perm(),
+			Ext:  filepath.Ext(file),
+		})
+	}
+
+	for i, file := range fileInfos {
+		fmt.Printf("%d: %s — Size: %d bytes — Permissions: %s\n", i+1, file.Path, file.Size, file.Perm)
+	}
+
+	chunks := chunkFiles(fileInfos, 30)
+	var allOrganized []OrganizedFile
+
+	for i, chunk := range chunks {
+		jsonData, err := json.MarshalIndent(chunk, "", "  ")
+		if err != nil {
+			fmt.Printf("There's an error in chunk %d: %v\n", i, err)
+			continue
+		}
+
+		jsonFileName := fmt.Sprintf("metadata_chunk_%d.json", i)
+		err = os.WriteFile(jsonFileName, jsonData, 0644)
+		if err != nil {
+			fmt.Printf("Can't write chunk %d: %v\n", i, err)
+			continue
+		}
+
+		fmt.Printf("\nChunk %d metadata saved to '%s'\n", i, jsonFileName)
+		organized := callGPT(jsonFileName, rootDir)
+		if organized != nil {
+			allOrganized = append(allOrganized, organized...)
+		}
+	}
+	organizeFiles(allOrganized, rootDir)
+	sortedMap := make(map[string]bool)
+	for _, f := range allOrganized {
+		sortedMap[f.CurrentPath] = true
+	}
+	for _, f := range fileInfos {
+		if !sortedMap[f.Path] {
+			unsortedPath := filepath.Join(rootDir, "Unsorted", filepath.Base(f.Path))
+			os.MkdirAll(filepath.Dir(unsortedPath), os.ModePerm)
+			os.Rename(f.Path, unsortedPath)
+			fmt.Printf("Unsorted -> %s\n", unsortedPath)
+		}
+	}
+	deleteEmptyDirs(rootDir)
+
+}
 
 func insidedirectory(path string) []string {
 	var filesList []string
@@ -36,36 +107,120 @@ type FileInfo struct {
 	Ext  string
 }
 
-func organizeFiles(files []OrganizedFile) {
-	for _, file := range files {
-		newDir := filepath.Dir(file.NewPath)
-		os.MkdirAll(newDir, os.ModePerm)
-
-		if _, err := os.Stat(file.CurrentPath); os.IsNotExist(err) {
-			fmt.Printf("File does not exist: %s\n", file.CurrentPath)
-			continue
+func chunkFiles(files []FileInfo, chunkSize int) [][]FileInfo {
+	var chunks [][]FileInfo
+	for i := 0; i < len(files); i += chunkSize {
+		end := i + chunkSize
+		if end > len(files) {
+			end = len(files)
 		}
-
-		err := os.Rename(file.CurrentPath, file.NewPath)
-		if err != nil {
-			fmt.Printf("Failed to move %s to %s: %v\n", file.CurrentPath, file.NewPath, err)
-		} else {
-			fmt.Printf("Moved %s -> %s\n", file.CurrentPath, file.NewPath)
-		}
-
+		chunks = append(chunks, files[i:end])
 	}
+	return chunks
 }
 
-func callGPT(jsonFile string) []OrganizedFile {
+type OrganizedFile struct {
+	Name        string `json:"name"`
+	CurrentPath string `json:"current_path"`
+	NewPath     string `json:"new_path"`
+}
+
+func callGPT(jsonFile string, rootDir string) []OrganizedFile {
 	apikey := os.Getenv("OPENAI_API_KEY")
-	fmt.Println("API Key:", apikey)
+	if apikey == "" {
+		fmt.Println("API key not found in environment variables.")
+		return nil
+	}
 
 	data, err := os.ReadFile(jsonFile)
 	if err != nil {
 		fmt.Printf("There's an error2!%v\n", err)
 		return nil
 	}
-	prompt := fmt.Sprintf(`You are a file organizer.Attached is a metadata file of files in a folder(files inside subfolders also included). You have to parse through each file, and using the informations like type, size,permissions, etc organize it based on the best logical reasons. It maybe based on File Types:Documents, Images, Audios, Videos, Others etc; File Size:100-500MB,500-1000MB, etc; Date Modified: Past Month,Past week, etc; or any other like this. The most apt reason must be chosen. Respond Only with a JSON array of objects. Each object must have :"name", "current_path",new_path. No explanations. Here is the data:%s.`, string(data))
+	prompt := fmt.Sprintf(`
+You are a file organizer bot. Your task is to analyze and categorize a list of files based on the following factors:
+
+1. File Type:
+   - Images: .jpg, .jpeg, .png, .gif, .bmp, .webp, .heic
+   - Videos: .mp4, .avi, .mov, .mkv
+   - Documents: .pdf, .doc, .docx, .txt, .ppt, .pptx, .xls, .xlsx
+   - Audio: .mp3, .wav, .aac
+   - Code: .py, .go, .java, .js, .html, .css, .c, .cpp
+   - System Files: .sys, .dll, .ini, .log
+   - Archives: .zip, .rar, .tar, .gz
+
+2. File Size (if available):
+   - Small: <1MB
+   - Medium: 1MB - 100MB
+   - Large: >100MB
+
+3. Date Created(if available):
+	- Today
+	- Last Week/This week
+	- Past Month/This Month
+	- Past Year/This Year
+	- By Year (eg, 2023,2024, etc.)
+
+5. By Content(if available):
+	- Government Documents
+	- Resumes
+	- Educational Materials
+	- Presentations
+	- Legal/Confidential Documents
+
+6. By Useage(if available)
+	- Recently Accessed
+	- Frequently Accessed
+	- Rarely Used
+	- Duplicates
+
+7. By Sensitivity(if available)
+	- Public
+	- Private
+	- Encrypted
+	- Contains Passwords
+	- Confidential
+
+8. By Labels(if available)
+	- Project
+	- Personal
+	- Family
+	- Official
+
+9. By Source(if available)
+	- WhatsApp
+	- Instagram
+	- Telegram
+	- Chrome or any Browser Download
+	- Screenshot
+	- Camera Upload
+
+10. Logical Grouping (if applicable):
+   - Use any common prefixes in filenames.
+   - Use existing folder structures or hints from the current path to suggest subcategorization.
+   - Group files that belong to the same context, project, or module if patterns suggest so.
+Rules:
+- Use the given "path" argument as the root folder. All new paths must remain inside this folder.
+- Reuse folders if they already exist (e.g., "/root/Images" if already present).
+- Always preserve the original filename.
+- Be logical and concise; avoid unnecessary nesting.
+- Analyse which attribute shows highes variability or contrast and use that attribute for the current data set to organize and group.  
+
+Output Format: Respond ONLY with a JSON array in the following format:
+
+[
+  {
+    "name": "example.jpg",
+    "current_path": "/home/user/downloads/example.jpg",
+    "new_path": "/home/user/downloads/Images/example.jpg"
+  },
+  ...
+]
+
+Given:
+- Root path: %s
+- File list: %s
+`, rootDir, string(data))
 
 	body := map[string]interface{}{
 		"model": "gpt-3.5-turbo",
@@ -103,9 +258,18 @@ func callGPT(jsonFile string) []OrganizedFile {
 	var result map[string]interface{}
 	json.Unmarshal(bodyBytes, &result)
 
+	if resp.StatusCode != 200 {
+		if errMsg, ok := result["error"].(map[string]interface{}); ok {
+			fmt.Printf("API Error [%v]: %v\n", errMsg["type"], errMsg["message"])
+		} else {
+			fmt.Printf("Unexpected response:\n%s\n", string(bodyBytes))
+		}
+		return nil
+	}
+
 	choices, ok := result["choices"].([]interface{})
 	if !ok || len(choices) == 0 {
-		fmt.Printf("There's an error6!%v\n", err)
+		fmt.Printf("No choices returned by API\n")
 		return nil
 	}
 
@@ -136,59 +300,61 @@ func callGPT(jsonFile string) []OrganizedFile {
 
 	fmt.Println("GPT Response:\n", message)
 
+	for i, f := range organizedFiles {
+		newRelPath := filepath.Base(filepath.Dir(f.NewPath))
+		newFullPath := filepath.Join(rootDir, newRelPath, f.Name)
+		organizedFiles[i].NewPath = newFullPath
+	}
+
 	return organizedFiles
 }
 
-type OrganizedFile struct {
-	Name        string `json:"name"`
-	CurrentPath string `json:"current_path"`
-	NewPath     string `json:"new_path"`
-}
-
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <folder_path>")
-		return
-	}
-	path := os.Args[1]
-	fmt.Printf("Folder path = %v", path)
-	var entries []string
-	entries = append(entries, insidedirectory(path)...)
-	var fileInfos []FileInfo
-	for _, file := range entries {
-		info, err := os.Stat(file)
-		if err != nil {
-			fmt.Printf("There's an error11!%v\n", err)
+func organizeFiles(files []OrganizedFile, rootDir string) {
+	for _, file := range files {
+		newDir := filepath.Dir(file.NewPath)
+		if !strings.HasPrefix(file.NewPath, rootDir) {
+			fmt.Printf("Skipping invalid new path (outside root): %s\n", file.NewPath)
 			continue
 		}
-		fileInfos = append(fileInfos, FileInfo{
-			Name: info.Name(),
-			Path: file,
-			Size: info.Size(),
-			Perm: info.Mode().Perm(),
-			Ext:  filepath.Ext(file),
-		})
-	}
 
-	for i, file := range fileInfos {
-		fmt.Printf("%d: %s — Size: %d bytes — Permissions: %s\n", i+1, file.Path, file.Size, file.Perm)
-	}
+		os.MkdirAll(newDir, os.ModePerm)
 
-	jsonData, err := json.MarshalIndent(fileInfos, "", "  ")
-	if err != nil {
-		fmt.Printf("There's an error12!%v\n", err)
-	}
+		if _, err := os.Stat(file.NewPath); err == nil {
+			fmt.Printf("File already exists at destination: %s\n", file.NewPath)
+			continue
+		}
 
-	jsonFileName := "metadatafile.json"
-	err = os.WriteFile(jsonFileName, jsonData, 0644)
-	if err != nil {
-		fmt.Printf("There's an error13!%v\n", err)
-	}
+		err := os.Rename(file.CurrentPath, file.NewPath)
+		if err != nil {
+			fmt.Printf("Failed to move %s to %s: %v\n", file.CurrentPath, file.NewPath, err)
+		} else {
+			fmt.Printf("Moved %s -> %s\n", file.CurrentPath, file.NewPath)
+		}
 
-	fmt.Printf("\nMetadata saved to '%s'\n", jsonFileName)
-	organized := callGPT(jsonFileName)
-	if organized != nil {
-		organizeFiles(organized)
 	}
+}
 
+func deleteEmptyDirs(path string) {
+	filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			entries, _ := os.ReadDir(p)
+			if len(entries) == 0 {
+				err := os.Remove(p)
+				if err == nil {
+					fmt.Printf("Deleted empty folder: %s\n", p)
+				}
+			}
+		}
+		return nil
+	})
 }
