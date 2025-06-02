@@ -90,5 +90,9 @@ HOW TO IMPLEMENT
                 go run Program.go <Folderpath>
                 Replace "Program" with the name you have saved your code.
                 Replace Folderpath with the path of directory you want to organize
-            
-            
+![Screenshot 2025-06-02 154114](https://github.com/user-attachments/assets/77ffb31d-6d72-4197-a883-883b2ea90f04)
+
+![Screenshot 2025-06-02 154720](https://github.com/user-attachments/assets/8fbc7684-8070-4254-b6e8-f2888d9f9e41)
+     
+![Screenshot 2025-06-02 154738](https://github.com/user-attachments/assets/2387b44a-dd4b-461d-9213-b55c8d7a4e87)
+![Screenshot 2025-06-02 154756](https://github.com/user-attachments/assets/90ba2deb-d22f-47dc-b78d-6ed57a066237)
