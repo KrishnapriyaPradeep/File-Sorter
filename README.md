@@ -1,78 +1,94 @@
-GPT-Integrated File Organizer
+GPT-Integrated File Organiser
 
-This is a Go-based intelligent file organization tool that scans, classifies, and rearranges files within a given folder using OpenAI's GPT-3.5 Turbo model.
-It recursively lists all files — including those inside subfolders — gathers their metadata, splits them into manageable chunks, leverages GPT for smart categorization, and physically sorts them into logical folders. Categorization is based on file type, size, origin, and usage context.
+This is a Go-based intelligent file organisation tool that scans, classifies, and rearranges files within a given folder using OpenAI's GPT-3.5 Turbo model.
+It recursively lists all files — including those inside subfolders — gathers their metadata, splits them into manageable chunks, leverages GPT for smart categorisation, and physically sorts them into logical folders. Categorisation is based on file type, size, origin, and usage context.
 
-How It Works
+HOW IT WORKS
 
-1. Input Folder Detection
+      1. Input Folder Detection
+      
+            Run the program with a given folder path.
+          
+            It recursively fetches all files inside the folder and its subfolders.
+          
+      2. Metadata Collection
+      
+            For each file, it collects:
+          
+              File name
+          
+              Full path
+          
+              File size
+          
+              Permissions
+          
+              File extension
+      
+      3. Chunking & JSON Export
+      
+            Metadata is split into chunks of 30 files.
+          
+            Each chunk is saved as a .json file for processing.
+          
+      4. AI Categorisation
+      
+            Each .json chunk is sent to OpenAI’s GPT API with a custom prompt.
+          
+            GPT analyses and returns:
+          
+            What each file likely is.
+          
+            Where it logically belongs.
+          
+            A list of current_path → new_path mappings.
+      
+      5. File Organisation
+      
+            Files are moved to their suggested folders inside the root directory.
+          
+            Files that aren't recognised or categorised are moved to an Unsorted/ folder.
+          
+      6. Cleanup
+      
+            Any empty directories are removed for a clean final structure.
+    
 
-  Run the program with a given folder path.
+TECH INFO
 
-  It recursively fetches all files inside the folder and its subfolders.
+      Language	Go (Golang)
+      
+      AI Backend	OpenAI GPT-3.5 Turbo (API)
+      
+      Libraries	os, filepath, io, encoding/json, net/http
 
-2. Metadata Collection
+USEAGE
 
-  For each file, it collects:
+      go run main.go <folder_path>
 
-    File name
+REQUIREMENTS
 
-    Full path
+      Export your OpenAI API key before running by:  export OPENAI_API_KEY=your-api-key-here
 
-    File size
 
-    Permissions
+HOW TO IMPLEMENT
 
-    File extension
-
-3. Chunking & JSON Export
-
-  Metadata is split into chunks of 30 files.
-
-  Each chunk is saved as a .json file for processing.
-
-4. AI Categorization
-
-  Each .json chunk is sent to OpenAI’s GPT API with a custom prompt.
-
-  GPT analyzes and returns:
-
-  What each file likely is.
-
-  Where it logically belongs.
-
-  A list of current_path → new_path mappings.
-
-5. File Organization
-
-  Files are moved to their suggested folders inside the root directory.
-
-  Files that aren't recognized or categorized are moved to an Unsorted/ folder.
-
-6. Cleanup
-
-  Any empty directories are removed for a clean final structure.
-
-Key Advantages
-
-  Avoids deep nesting — folders are clean, intuitive, and flat.
-
-  Considers file size, origin (like WhatsApp), sensitivity, file type, and usage.
-
-  Practical design — perfect for organizing messy Downloads folders or project directories.
-
-Tech Info
-
-  Language	Go (Golang)
-  
-  AI Backend	OpenAI GPT-3.5 Turbo (API)
-  
-  Libraries	os, filepath, io, encoding/json, net/http
-
-Usage
-
-  go run main.go <folder_path>
-
-Requirements
-
-  Export your OpenAI API key before running by:  export OPENAI_API_KEY=your-api-key-here
+      PREREQUISITES
+            OS - TERMINAL  
+            GO (Install)
+            OpenAI Account - API Keys - Create new secret key - Copy and safely save key (Won't be able to see again)
+      RUN THE PROGRAM
+           1. A project directory - Initialise Go module - Save code in the directory
+           2. Open the current directory's Terminal
+           3. Set API Key in Terminal (Command Prompt or PowerShell)
+                For Windows 
+                      $env:OPENAI_API_KEY="your-secret-key"
+                For macOS/ Linux
+                      export OPENAI_API_KEY="your-secret-key"
+                Run this command each time you open a new terminal
+           4. Run Program
+                go run Program.go <Folderpath>
+                Replace "Program" with the name you have saved your code.
+                Replace Folderpath with the path of directory you want to organize
+            
+            
